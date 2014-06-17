@@ -5,6 +5,10 @@ if !exists('coquille_auto_move')
     let g:coquille_auto_move="false"
 endif
 
+if !exists('g:coquille_coqtop_path')
+    let g:coquille_coqtop_path="coqtop"
+endif
+
 " Load vimbufsync if not already done
 call vimbufsync#init()
 
