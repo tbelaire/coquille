@@ -26,6 +26,12 @@ error_at = None
 
 info_msg = None
 
+logfile = open('/tmp/coqutille_log.txt', 'w')
+
+def log(msg):
+    logfile.write(str(msg) + "\n")
+    logfile.flush()
+
 ###################
 # synchronization #
 ###################
@@ -71,14 +77,16 @@ def restart_coq(*args):
     global coqtop
     if coqtop: kill_coqtop()
     try:
+        # devnull = open(os.devnull, 'wb')
         coqtop = subprocess.Popen(
-                ["coqtop", "-ideslave"] + list(args),
+                ["hoqtop", "-ideslave", "-debug"] + list(args),
                 stdin = subprocess.PIPE,
                 stdout = subprocess.PIPE,
+                stderr = logfile,
                 preexec_fn = ignore_sigint
                 )
     except OSError:
-        print("Error: couldn't launch coqtop")
+        print("Error: couldn't launch hoqtop")
 
 def goto_last_sent_dot():
     (line, col) = (0,1) if encountered_dots == [] else encountered_dots[-1]
@@ -100,19 +108,21 @@ def coq_rewind(steps=1):
 
     send_cmd(request)
 
-    response = get_answer()
+    responses = get_answer()
 
-    if response is None:
+    if responses is None:
         vim.command("call coquille#KillSession()")
         print('ERROR: the Coq process died')
         return
 
-    if response.get('val') == 'good':
-        additional_steps = response.find('int') # should never be none
-        nb_removed = steps + int(additional_steps.text)
-        encountered_dots = encountered_dots[:len(encountered_dots) - nb_removed]
-    else:
-        info_msg = "[COQUILLE ERROR] Unexpected answer:\n\n%s" % ET.tostring(response)
+    for response in responses:
+        if response.get('val') == 'good':
+            additional_steps = response.find('int') # should never be none
+            assert(additional_steps != None)
+            nb_removed = steps + int(additional_steps.text)
+            encountered_dots = encountered_dots[:len(encountered_dots) - nb_removed]
+        else:
+            info_msg = "[COQUILLE ERROR] Unexpected answer:\n\n%s" % ET.tostring(response)
 
     refresh()
 
@@ -166,9 +176,10 @@ def coq_next():
         goto_last_sent_dot()
 
 def coq_raw_query(*args):
+    # log("Starting query with args %s" %(args))
     global info_msg
     if coqtop is None:
-        print("Error: Coqtop isn't running. Are you sure you called :CoqLaunch?")
+        log("Error: Coqtop isn't running. Are you sure you called :CoqLaunch?")
         return
 
     raw_query = ' '.join(args)
@@ -181,25 +192,46 @@ def coq_raw_query(*args):
     xml.set('raw', 'true')
     xml.text = raw_query.decode(encoding)
 
+    log("About to send cmd")
     send_cmd(xml, encoding)
-    response = get_answer()
-
+    responses = get_answer()
     if response is None:
         vim.command("call coquille#KillSession()")
         print('ERROR: the Coq process died')
         return
 
-    if response.get('val') == 'good':
-        optionnal_info = response.find('string')
-        if optionnal_info is not None:
-            info_msg = optionnal_info.text
-    elif response.get('val') == 'fail':
-        info_msg = response.text
-        print("FAIL")
-    else:
-        print("(ANOMALY) unknown answer: %s" % ET.tostring(response)) # ugly
+    new_info_msg = ""
+    for response in responses:
+        log("Got answer %s" % ET.tostring(response))
+        level, optional_info = extract_info_from(response)
+        if optional_info:
+            new_info_msg += optional_info
+        if level in ('good', 'notice', 'info'):
+            pass
+        elif level == 'fail':
+            print("(FAIL) bad answer: %s" % ET.tostring(response)) # ugly
+        else:
+            print("(ANOMALY) unknown answer: %s" % ET.tostring(response)) # ugly
 
+    if len(new_info_msg) > 0:
+        info_msg = new_info_msg
     show_info()
+
+def extract_info_from(response):
+    if response is None:
+        vim.command("call coquille#KillSession()")
+        print('ERROR: the Coq process died')
+        return (None, None) # Raise exception?
+    level = response.get('val')
+    message_level = response.find('message_level')
+    if level is None and message_level is not None:
+        level = message_level.get('val')
+    s = response.find('string')
+    info = None
+    if s is not None:
+        info = s.text
+    return (level, info)
+
 
 
 def launch_coq(*args):
@@ -234,35 +266,37 @@ def show_goal():
             break
     del buff[:]
 
-    shitty_xml = get_answer()
+    shitty_xmls = get_answer()
 
-    if shitty_xml is None:
+    if shitty_xmls is None:
         vim.command("call coquille#KillSession()")
         print('ERROR: the Coq process died')
         return
+    for shitty_xml in shitty_xmls:
+        log("Goals are %s" % ET.tostring(shitty_xml))
 
-    opt_goal = shitty_xml.find('option')
-    if opt_goal is None or opt_goal.get('val') == 'none': return # nothing to do
+        opt_goal = shitty_xml.find('option')
+        if opt_goal is None or opt_goal.get('val') == 'none': return # nothing to do
 
-    sub_goals = list(opt_goal.find('goals').find('list')) # there are only 2 of these
-    # and the second one is empty. Cheers.
+        sub_goals = list(opt_goal.find('goals').find('list')) # there are only 2 of these
+        # and the second one is empty. Cheers.
 
-    nb_subgoals = len(sub_goals)
-    plural_opt = '' if nb_subgoals == 1 else 's'
-    buff.append(['%d subgoal%s' % (nb_subgoals, plural_opt), ''])
+        nb_subgoals = len(sub_goals)
+        plural_opt = '' if nb_subgoals == 1 else 's'
+        buff.append(['%d subgoal%s' % (nb_subgoals, plural_opt), ''])
 
-    for idx, sub_goal in enumerate(sub_goals):
-        [ _id, hyps , ccl ] = list(sub_goal)
-        if idx == 0:
-            # we print the environment only for the current subgoal
-            for hyp in list(hyps):
-                lst = map(lambda s: s.encode('utf-8'), hyp.text.split('\n'))
-                buff.append(lst)
-        buff.append('')
-        buff.append('======================== ( %d / %d )' % (idx+1 , nb_subgoals))
-        lines = map(lambda s: s.encode('utf-8'), ccl.text.split('\n'))
-        buff.append(lines)
-        buff.append('')
+        for idx, sub_goal in enumerate(sub_goals):
+            [ _id, hyps , ccl ] = list(sub_goal)
+            if idx == 0:
+                # we print the environment only for the current subgoal
+                for hyp in list(hyps):
+                    lst = map(lambda s: s.encode('utf-8'), hyp.text.split('\n'))
+                    buff.append(lst)
+            buff.append('')
+            buff.append('======================== ( %d / %d )' % (idx+1 , nb_subgoals))
+            lines = map(lambda s: s.encode('utf-8'), ccl.text.split('\n'))
+            buff.append(lines)
+            buff.append('')
 
 def show_info():
     global info_msg
@@ -342,7 +376,7 @@ def send_until_fail():
     xml_template.set('val', 'interp')
     xml_template.set('id', '0')
 
-    encoding = vim.eval('&fileencoding')
+    encoding = vim.eval('&fileencoding') or "utf-8"
 
     while len(send_queue) > 0:
         reset_color()
@@ -353,37 +387,36 @@ def send_until_fail():
         xml_template.text = message.decode(encoding)
 
         send_cmd(xml_template, encoding)
-        response = get_answer()
+        responses = get_answer()
 
-        if response is None:
+        if responses is None:
             vim.command("call coquille#KillSession()")
             print('ERROR: the Coq process died')
             return
 
-        if response.get('val') == 'good':
-            (eline, ecol) = message_range['stop']
-            encountered_dots.append((eline, ecol + 1))
-
-            optionnal_info = response.find('string')
-            if optionnal_info is not None:
-                info_msg = optionnal_info.text
-        else:
-            send_queue.clear()
-            if response.get('val') == 'fail':
-                info_msg = response.text
-                loc_s = response.get('loc_s')
-                if loc_s is not None:
-                    loc_s = int(loc_s)
-                    loc_e = int(response.get('loc_e'))
-                    (l, c) = message_range['start']
-                    (l_start, c_start) = _pos_from_offset(c, xml_template.text, loc_s)
-                    (l_stop, c_stop)   = _pos_from_offset(c, xml_template.text, loc_e)
-                    error_at = ((l + l_start, c_start), (l + l_stop, c_stop))
-            elif response.get('val') == 'unsafe':
-                print('wtf does "unsafe" mean?')
+        for response in responses:
+            level, info_msg = extract_info_from(response)
+            if level in ('good', 'notice', 'info'):
+                (eline, ecol) = message_range['stop']
+                encountered_dots.append((eline, ecol + 1))
             else:
-                print("(ANOMALY) unknown answer: %s" % ET.tostring(response))
-            break
+                # TODO fixup to use level, info_msg
+                send_queue.clear()
+                if response.get('val') == 'fail':
+                    info_msg = response.text
+                    loc_s = response.get('loc_s')
+                    if loc_s is not None:
+                        loc_s = int(loc_s)
+                        loc_e = int(response.get('loc_e'))
+                        (l, c) = message_range['start']
+                        (l_start, c_start) = _pos_from_offset(c, xml_template.text, loc_s)
+                        (l_stop, c_stop)   = _pos_from_offset(c, xml_template.text, loc_e)
+                        error_at = ((l + l_start, c_start), (l + l_stop, c_stop))
+                elif response.get('val') == 'unsafe':
+                    print('wtf does "unsafe" mean?')
+                else:
+                    print("(ANOMALY) unknown answer: %s" % ET.tostring(response))
+                break
 
     refresh()
 
@@ -396,26 +429,48 @@ def _pos_from_offset(col, msg, offset):
 
 def send_cmd(xml_tree, encoding='utf-8'):
     serialized = ET.tostring(xml_tree, encoding)
+    log("TO coq: %s" % serialized)
     coqtop.stdin.write(serialized)
 
 def get_answer():
+    chunk_size = 40 # constant
+    # Idea, pull out multiple messages until it's empty, return a list
     acc = ''
     fd = coqtop.stdout.fileno()
+    log("About to read from coq")
     while True:
         try:
-            acc += os.read(fd, 0x4000)
-            try:
-                elt = ET.fromstring(acc)
-                return elt
-            except ET.ParseError:
+            bytes_read = chunk_size # is a lie, need do while loop
+            while bytes_read == chunk_size:
+                new = os.read(fd, chunk_size)
+                bytes_read = len(new)
+                acc += new
+
+            messages = _parse_xml_list(acc)
+            if messages is None:
+                log("Looping")
                 continue
+            return messages
+
         except OSError:
             # coqtop died
             return None
+    print("Took to long to talk to coq")
 
 #################
 # Miscellaneous #
 #################
+def _parse_xml_list(s):
+    # s may be <msg>1</msg><msg>2</msg>, which fails to parse
+    surround = "<special_list>%s</special_list>" % s
+    # Now we have a proper xml tree, not forest
+    try:
+        elts = ET.fromstring(surround)
+        return list(elts)
+    except ET.ParseError:
+        return None
+
+
 
 def _between(begin, end):
     """
