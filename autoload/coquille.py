@@ -195,7 +195,7 @@ def coq_raw_query(*args):
     log("About to send cmd")
     send_cmd(xml, encoding)
     responses = get_answer()
-    if response is None:
+    if responses is None:
         vim.command("call coquille#KillSession()")
         print('ERROR: the Coq process died')
         return
