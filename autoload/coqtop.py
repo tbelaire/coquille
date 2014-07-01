@@ -22,6 +22,7 @@ TIMEOUT = 3.0
 
 class CoqTop (object):
     def __init__(self,
+                 coqtop_path,
                  args,
                  logfile,
                  debug=False):
@@ -29,7 +30,7 @@ class CoqTop (object):
             signal.signal(signal.SIGINT, signal.SIG_IGN)
         self.coqtop = AsyncPipe(
             dict(
-                args=["hoqtop", "-ideslave", "-debug"] + list(args),  #TODO debug flag
+                args=[coqtop_path, "-ideslave", "-debug"] + list(args),  #TODO debug flag
                 stderr=logfile,
                 preexec_fn=ignore_sigint),
             xml_stream_parser.enqueue_xml)
@@ -209,7 +210,7 @@ class CoqTop (object):
 if __name__ == "__main__":
     import sys
     import time
-    coqtop = CoqTop([], True, sys.stdout)
+    coqtop = CoqTop("hoqtop", [], True, sys.stdout)
 
     print( coqtop.interp('Require Import Overture.') )
     print( coqtop.interp('Require Import HoTT.types.Bool.') )

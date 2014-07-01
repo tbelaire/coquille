@@ -62,7 +62,8 @@ def restart_coq(*args):
     global coqtop
     if coqtop: coqtop.close()
     try:
-        coqtop = CoqTop(args, logfile)
+        coqtop_path = vim.eval('g:coquille_coqtop_path') #TODO
+        coqtop = CoqTop(coqtop_path, args, logfile)
     except OSError:
         print("Error: couldn't launch hoqtop")
 
