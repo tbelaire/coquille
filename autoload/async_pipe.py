@@ -29,6 +29,10 @@ class AsyncPipe (object):
         self.io_thread.daemon = True # thread dies with the program
         self.io_thread.start()
 
+    def close(self):
+        # TODO add threading.Event and have things die
+        self.proc.terminate()
+
     def get(self, block=True, timeout=None):
         return self.queue.get(block, timeout)
 

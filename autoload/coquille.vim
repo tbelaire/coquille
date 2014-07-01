@@ -103,6 +103,11 @@ function! coquille#Launch(...)
     endif
 endfunction
 
+function! coquille#LaunchHoq(...)
+    let g:coquille_coqtop_path="hoqtop"
+    call coquille#Launch()
+endfunction
+
 function! coquille#Register()
     hi CheckedByCoq ctermbg=17 guibg=#564545
     hi SentToCoq ctermbg=60 guibg=#504545
@@ -113,4 +118,5 @@ function! coquille#Register()
     let b:errors  = -1
 
     command! -bar -buffer -nargs=* -complete=file CoqLaunch call coquille#Launch(<f-args>)
+    command! -bar -buffer -nargs=* -complete=file HoqLaunch call coquille#LaunchHoq(<f-args>)
 endfunction

@@ -67,6 +67,9 @@ def restart_coq(*args):
     except OSError:
         print("Error: couldn't launch hoqtop")
 
+def kill_coqtop():
+    if coqtop: coqtop.close()
+
 def goto_last_sent_dot():
     (line, col) = (0,1) if encountered_dots == [] else encountered_dots[-1]
     vim.current.window.cursor = (line + 1, col)

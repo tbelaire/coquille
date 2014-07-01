@@ -37,9 +37,9 @@ class CoqTop (object):
 
     def close(self):
         try:
-            # TODO tidy up
-            self.coqtop.proc.terminate()
-            self.coqtop.proc.communicate()
+            # TODO this crashes with error about closing coqtop.stdout while
+            # it's being used in another thread
+            self.coqtop.close()
         except OSError:
             pass
 
