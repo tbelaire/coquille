@@ -106,10 +106,15 @@ class CoqTop (object):
             self.send_text('<call id="1" raw="true" val="interp">{}</call>'
                              .format(escape(message)))
         (messages, response) = self.get_answer()
+        # I'm tired of being nagged
+        messages = [(level, text) for (level, text) in messages
+                    if text !=
+                    "Query commands should not be inserted in scripts"]
+
         if response is None:
             return (messages, None)
         if response.get('val') == 'good':
-            return (messages, (True, None)) #TODO
+            return (messages, (True, None))
         elif response.get('val') == 'fail':
             fail_msg = ('error', response.text)
             messages.append(fail_msg)
@@ -117,6 +122,10 @@ class CoqTop (object):
                     (False,
                      (int(response.get('loc_s')),
                       int(response.get('loc_e')))))
+        elif response.get('val') == 'unsafe':
+            # This means we used Admited or friends.
+            # Just make sure the editor highlights it ok.
+            return (messages, (True, 'Unsafe'))
         else:
             print("(ANOMALY) unknown answer: %s" % ET.tostring(response))
 
@@ -202,15 +211,6 @@ if __name__ == "__main__":
     import time
     coqtop = CoqTop([], True, sys.stdout)
 
-    def print_answer((messages, response)):
-        print("Messages {}".format(messages))
-        if response is not None:
-            print("Response {}".format(ET.tostring(response)))
-        else:
-            print("Response was None")
-
-
-    # coq_cycle('<call id="0" raw="true" val="interp">Require Import Overture.</call>')
     print( coqtop.interp('Require Import Overture.') )
     print( coqtop.interp('Require Import HoTT.types.Bool.') )
     print( coqtop.interp('Check true.') )
@@ -229,5 +229,8 @@ if __name__ == "__main__":
     print(coqtop.goals())
 
     print( coqtop.interp('Qed.') )
+
+    print( coqtop.interp('Admitted.') )
+    print( coqtop.rewind(1) )
 
 
