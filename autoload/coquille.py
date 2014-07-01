@@ -1,10 +1,6 @@
 import vim
 
-import os
 import re
-import subprocess
-import signal
-import xml.etree.ElementTree as ET
 
 from collections import deque
 
@@ -338,18 +334,6 @@ def _pos_from_offset(col, msg, offset):
 #################
 # Miscellaneous #
 #################
-def _parse_xml_list(s):
-    # s may be <msg>1</msg><msg>2</msg>, which fails to parse
-    surround = "<special_list>%s</special_list>" % s
-    # Now we have a proper xml tree, not forest
-    try:
-        elts = ET.fromstring(surround)
-        return list(elts)
-    except ET.ParseError:
-        return None
-
-
-
 def _between(begin, end):
     """
     Returns a string corresponding to the portion of the buffer between the
