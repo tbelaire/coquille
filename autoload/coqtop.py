@@ -25,15 +25,25 @@ class CoqTop (object):
                  coqtop_path,
                  args,
                  logfile,
-                 debug=False):
+                 debug=False,
+                 xml_parser=None):
+
+        xml_parser = (xml_parser or
+                      xml_stream_parser.enqueue_xml_stream)
+        # Other options are enqueue_xml, enqueue_xml_one_by_one
+
         def ignore_sigint():
             signal.signal(signal.SIGINT, signal.SIG_IGN)
+
         self.coqtop = AsyncPipe(
             dict(
                 args=[coqtop_path, "-ideslave", "-debug"] + list(args),  #TODO debug flag
                 stderr=logfile,
                 preexec_fn=ignore_sigint),
-            xml_stream_parser.enqueue_xml)
+            parser=xml_parser)
+        # TODO Windows support by passing in
+        # xml_stream_parser.enqueue_xml_one_by_one
+        self.logfile = logfile
 
     def close(self):
         try:
@@ -64,12 +74,12 @@ class CoqTop (object):
                     if message is not None:
                         messages.append(message)
                     else:
-                        logfile.write("Dropping unparsed message: {}\n"
+                        self.logfile.write("Dropping unparsed message: {}\n"
                                       .format(ET.tostring(response)))
                 elif response.tag == "value":
                     return (messages, response)
                 else:
-                    logfile.write("Unknown xml response: {}\n".format(
+                    self.logfile.write("Unknown xml response: {}\n".format(
                         ET.tostring(response)))
             except Queue.Empty:
                 return (messages, None)
@@ -210,7 +220,7 @@ class CoqTop (object):
 if __name__ == "__main__":
     import sys
     import time
-    coqtop = CoqTop("hoqtop", [], True, sys.stdout)
+    coqtop = CoqTop("hoqtop", [], debug=True, logfile=sys.stdout)
 
     print( coqtop.interp('Require Import Overture.') )
     print( coqtop.interp('Require Import HoTT.types.Bool.') )
