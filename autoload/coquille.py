@@ -22,6 +22,7 @@ send_queue = deque([])
 
 error_at = None
 
+# TODO remove this
 logfile = open('/tmp/coqutille_log.txt', 'w')
 
 def log(msg):
